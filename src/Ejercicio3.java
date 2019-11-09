@@ -2,20 +2,20 @@ import java.util.HashMap;
 
 public class Ejercicio3 {
 	public static void main(String[] args) {
-		HashMap<Integer, Proceso> listaProcesos = new HashMap<>();
-		HD hardDisk = new HD(listaProcesos);
-		for (int i = 0; i < 10; i++) {
-			listaProcesos.put(i + 1, new Proceso(i + 1, hardDisk));
-			listaProcesos.get(i + 1).start();
+		HashMap<Integer, Proceso> listaProcesos = new HashMap<Integer, Proceso>();
+		HD discoDuro = new HD(listaProcesos);
+		Needle needle = new Needle(discoDuro);
+		for (int i = 1; i <= 10; i++) {
+			listaProcesos.put(i, new Proceso(i,discoDuro));
+			listaProcesos.get(i).start();
 		}
-		Needle needle = new Needle(hardDisk);
 		needle.start();
 		try {
-			for (int i = 0; i < 10; i++) {
-				listaProcesos.get(i + 1).join();
-				listaProcesos.remove(i + 1);
+			for (int i = 1; i <= 10; i++) {
+				listaProcesos.get(i).join();
 			}
-			hardDisk.setHasFinalized(true);
+			listaProcesos.clear();
+			discoDuro.notifica();
 			needle.join();
 		} catch (InterruptedException e) {
 			e.printStackTrace();
@@ -25,91 +25,98 @@ public class Ejercicio3 {
 }
 
 class HD {
-	private boolean isReading = false;
-	private boolean hasFinalized = false;
-	private int currentPista = 0;
-	private HashMap<Integer, Proceso> pendingProcesses;
+	private boolean buffering = false;
+	private int pistaActual = 0;
+	private boolean mainTermina = false;
+	private HashMap<Integer, Proceso> listaProcesos;
 
 	public HD(HashMap<Integer, Proceso> listaProcesos) {
-		pendingProcesses = listaProcesos;
+		this.listaProcesos = listaProcesos;
+	}
+	
+	public synchronized void notifica() {
+		mainTermina = true;
+		notify();
 	}
 
-	public boolean isReading() {
-		return isReading;
-	}
+	public synchronized void leerFichero(int pistaLeyendo) {
+		try {
+			while (buffering && this.pistaActual != pistaLeyendo) {
+				wait();
+			}
+			if (pistaActual != pistaLeyendo) {
 
-	public synchronized void leePista(int currentPista) throws InterruptedException {
-		while (isReading && this.currentPista != currentPista)
-			wait();
-		if (this.currentPista != currentPista) {
-			this.currentPista = currentPista;
-			isReading = true;
-			System.out.println("Reading " + currentPista);
-			notifyAll();
-		} else {
-			System.out.println("Sharing " + currentPista);
+				buffering = true;
+				pistaActual = pistaLeyendo;
+				System.out.println("Reading " + pistaLeyendo);
+				notifyAll();
+			} else {
+				System.out.println("Sharing " + pistaLeyendo);
+			}
+
+		} catch (InterruptedException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
 		}
-		wait();
 	}
 
-	public synchronized void leer() {
-		while (!pendingProcesses.isEmpty()) {
+	public synchronized void ficheroLeido() {
+
+		while (!listaProcesos.isEmpty()) {
 			try {
-				while (!isReading && !hasFinalized) {
+				while (!buffering && !mainTermina) {
 					wait();
 				}
+				buffering = false;
 				Thread.currentThread().sleep((int) (Math.random() * 1000 + 1000));
-				System.out.println("Read " + currentPista);
-				isReading = false;
+				System.out.println("Read " + pistaActual);
 				notifyAll();
 			} catch (InterruptedException e) {
+				// TODO Auto-generated catch block
 				e.printStackTrace();
 			}
 		}
-	}
-
-	public synchronized void setHasFinalized(boolean hasFinalized) {
-		this.hasFinalized = hasFinalized;
-		notify();
 	}
 }
 
 class Proceso extends Thread {
-	private Integer num;
-	private HD hardDisk;
-	private int[] pistas;
+	private int numPista;
+	private HD discoDuro;
+	private int[] pistas = new int[10];
 
-	public Proceso(Integer num, HD hardDisk) {
-		this.num = num;
-		this.hardDisk = hardDisk;
-		pistas = new int[10];
-		for (int i = 0; i < pistas.length; i++) {
-			pistas[i] = (int) (Math.random() * 20 + 1);
-		}
+	public Proceso(Integer posicion, HD discoDuro) {
+		this.numPista = posicion;
+		this.discoDuro = discoDuro;
+		ponerFichero();
 	}
 
 	public void run() {
-		for (int i = 0; i < pistas.length; i++) {
+		for (int i = 0; i < 10; i++) {
 			try {
-				sleep((int) (Math.random() * 1000));
-				hardDisk.leePista(pistas[i]);
+				sleep((int) (Math.random() * 1000 + 1000));
+				discoDuro.leerFichero(pistas[i]);
 			} catch (InterruptedException e) {
 				e.printStackTrace();
 			}
 		}
-		System.out.println("Finaliza el proceso " + num);
+		System.out.println("Termina el proceso: " + numPista);
+	}
+	
+	public void ponerFichero() {
+		for (int i = 0; i < 10; i++) {
+			pistas[i] = (int) (Math.random() * 20 + 1);
+		}
 	}
 }
 
 class Needle extends Thread {
-	private HD hardDisk;
+	private HD discoDuro;
 
-	public Needle(HD hardDisk) {
-		this.hardDisk = hardDisk;
+	public Needle(HD discoDuro) {
+		this.discoDuro = discoDuro;
 	}
 
 	public void run() {
-		hardDisk.leer();
-		System.out.println("Finaliza el needle ");
+		discoDuro.ficheroLeido();
 	}
 }
